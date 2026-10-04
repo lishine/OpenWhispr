@@ -11,8 +11,8 @@ android {
         applicationId = "com.edib.openwhispr.cohere"
         minSdk = 30
         targetSdk = 35
-        versionCode = 26
-        versionName = "3.10.0-cohere.2"
+        versionCode = 27
+        versionName = "3.10.0-cohere.3"
 
         ndk { abiFilters += "arm64-v8a" }
     }

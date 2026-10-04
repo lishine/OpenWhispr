@@ -2,7 +2,7 @@
 
 Microphone WAV recordings are sent over HTTPS to the transcription URL you select in Settings. There is no default public endpoint. Your chosen provider or self-hosted server controls processing and retention. With a personal Mac Cohere bridge, transcription runs on that Mac; an HTTPS tunnel provider also carries the audio. The original Mac bridge deletes temporary files after processing, but this app cannot impose that policy on other servers.
 
-The app records in memory. It copies the transcript to Android's clipboard and attempts insertion into the active field. Android Accessibility detects editable focus and the visible input-method window, and inserts the result. Focused-field content and API keys are not printed to app logs. Connection settings are stored privately on-device and Android backup is disabled. No key is included in source or APK. There is no cleanup/chat-model call or on-phone speech engine.
+The app records in memory. It first attempts direct insertion into the focused field without using the clipboard. Only when direct insertion is unavailable does it copy the transcript to Android's clipboard and attempt paste; the transcript remains available for manual paste if that fails. Android Accessibility detects editable focus and the visible input-method window, and inserts the result. Focused-field content and API keys are not printed to app logs. Connection settings are stored privately on-device and Android backup is disabled. No key is included in source or APK. There is no cleanup/chat-model call or on-phone speech engine.
 
 The upstream policy below is historical and does not describe this edition's configurable destination.
 

@@ -21,7 +21,7 @@ For local Cohere on a Mac, expose your own authenticated bridge through HTTPS, e
 
 ## Use
 
-Open a text field. The mic appears when an editable field is focused **or** the keyboard is visible. Some apps focus their field before opening the keyboard, so you can dictate at that point. Tap once to record, then again to stop. Recording starts only on a tap; it stops automatically at 89 seconds. The mic stays visible during recording and transcription. The result is pasted into the field and copied to the clipboard. The app never sends your message. Custom fields that reject accessibility insertion can use manual paste.
+Open a text field. The mic appears when an editable field is focused **or** the keyboard is visible. Some apps focus their field before opening the keyboard, so you can dictate at that point. Tap once to record, then again to stop. Recording starts only on a tap; it stops automatically at 89 seconds. The mic stays visible during recording and transcription. The result is inserted directly into the focused field, keeping surrounding text and inserting at the cursor or replacing the selection, without touching the clipboard or displaying a success tooltip. The app never sends your message. Fields that reject direct insertion use clipboard paste as a fallback; Android can still show its clipboard notice in that case. If automatic insertion fails, the app shows a manual-paste hint and leaves the transcript on the clipboard.
 
 The keyboard visibility fallback reads Android's interactive input-method window. No app-specific allowlist is required. Hide the idle mic by leaving text entry; pause it using Status → Background service. Disable any older dictation overlay to avoid duplicate buttons.
 
