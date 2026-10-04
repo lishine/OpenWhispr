@@ -3,8 +3,6 @@ package com.edib.openwhispr
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.res.ColorStateList
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
@@ -19,12 +17,8 @@ import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.android.material.button.MaterialButton
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.materialswitch.MaterialSwitch
-import com.google.android.material.radiobutton.MaterialRadioButton
 import com.google.android.material.tabs.TabLayout
-import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
@@ -43,26 +37,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setupCollapsedRowSub: TextView
     private lateinit var setupDoneSummary: TextView
     private lateinit var keyRowSub: TextView
-    private lateinit var customInstructionsRowSub: TextView
-    private lateinit var customInstructionsRow: LinearLayout
-    private lateinit var modelContainer: LinearLayout
-    private lateinit var voiceCommandsDetailContainer: LinearLayout
-    private lateinit var triggerPhraseRowSub: TextView
     private lateinit var tabLayout: TabLayout
     private lateinit var statusContainer: LinearLayout
     private lateinit var dictationContainer: LinearLayout
     private lateinit var settingsContainer: LinearLayout
 
-    private val modelRows = mutableMapOf<String, ModelRowViews>()
     private var batteryWarningShown = false
     private var setupExpanded = false
-
-    private data class ModelRowViews(
-        val radio: MaterialRadioButton,
-        val progress: LinearProgressIndicator,
-        val subtitle: TextView,
-        val dlBtn: MaterialButton
-    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,7 +59,6 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 2)
         }
 
-        checkForUpdate()
 
         val outer = vertical(0, 0)
 
@@ -94,7 +74,7 @@ class MainActivity : AppCompatActivity() {
             layoutParams = LinearLayout.LayoutParams(dp(40), dp(40)).apply { marginEnd = dp(12) }
         })
         header.addView(TextView(this).apply {
-            text = "OpenWispr"
+            text = "OpenWispr Cohere"
             textSize = 32f
         })
         outer.addView(header)
@@ -158,7 +138,7 @@ class MainActivity : AppCompatActivity() {
         statusContainer.addView(accRow)
 
         accCaption = TextView(this).apply {
-            text = "Needed to detect the focused text field and insert the cleaned-up text there."
+            text = "Needed to detect the focused text field and insert the transcribed text there."
             textSize = 12f
             setTextColor(attrColor(android.R.attr.textColorSecondary))
             alpha = 0.8f
@@ -194,83 +174,13 @@ class MainActivity : AppCompatActivity() {
         // ================= Dictation tab =================
 
         dictationContainer.addView(sectionHeader("Engine"))
-
-        val isCloud = !prefs().getBoolean("use_local", true)
-        val cloudSwitch = MaterialSwitch(this).apply {
-            isChecked = isCloud
-            isClickable = false
-        }
-        val cloudRow = settingsRow("Use cloud transcription", "Requires Groq API key", cloudSwitch) {
-            val newCloud = !cloudSwitch.isChecked
-            prefs().edit().putBoolean("use_local", !newCloud).apply()
-            cloudSwitch.isChecked = newCloud
-            refresh()
-        }
-        dictationContainer.addView(cloudRow)
-
-        modelContainer = vertical(0)
-        modelContainer.addView(sectionHeader("Local models"))
-        for (m in MODEL_CATALOG) modelContainer.addView(buildModelRow(m))
-        dictationContainer.addView(modelContainer)
-
-        dictationContainer.addView(sectionHeader("Post-Processing"))
-
-        val isPostProcessing = prefs().getBoolean("use_post_processing", false)
-        val postProcessSwitch = MaterialSwitch(this).apply {
-            isChecked = isPostProcessing
-            isClickable = false
-        }
-        val postProcessRow = settingsRow("Cleanup transcript", "Uses Groq Chat API to fix grammar and punctuation", postProcessSwitch) {
-            val newVal = !postProcessSwitch.isChecked
-            prefs().edit().putBoolean("use_post_processing", newVal).apply()
-            postProcessSwitch.isChecked = newVal
-            refresh()
-        }
-        dictationContainer.addView(postProcessRow)
-
-        customInstructionsRow = settingsRow("Add custom instructions", "Tap to add extra refinements") {
-            promptCustomInstructions()
-        }
-        customInstructionsRowSub = customInstructionsRow.findViewWithTag("subtitle")
-        customInstructionsRowSub.maxLines = 2
-        customInstructionsRowSub.ellipsize = android.text.TextUtils.TruncateAt.END
-        dictationContainer.addView(customInstructionsRow)
-
-        dictationContainer.addView(sectionHeader("Voice Commands"))
-
-        val isVoiceCommands = prefs().getBoolean("voice_commands_enabled", false)
-        val voiceCommandsSwitch = MaterialSwitch(this).apply {
-            isChecked = isVoiceCommands
-            isClickable = false
-        }
-        val voiceCommandsRow = settingsRow(
-            "Voice commands",
-            "Say a trigger phrase to translate, summarize, and more",
-            voiceCommandsSwitch
-        ) {
-            val newVal = !voiceCommandsSwitch.isChecked
-            prefs().edit().putBoolean("voice_commands_enabled", newVal).apply()
-            voiceCommandsSwitch.isChecked = newVal
-            refresh()
-        }
-        dictationContainer.addView(voiceCommandsRow)
-
-        voiceCommandsDetailContainer = vertical(0)
-
-        val triggerPhraseRow = settingsRow("Trigger phrase", "Tap to change") { promptTriggerPhrase() }
-        triggerPhraseRowSub = triggerPhraseRow.findViewWithTag("subtitle")
-        voiceCommandsDetailContainer.addView(triggerPhraseRow)
-
-        val examplesRow = settingsRow("Command examples", "See what you can say") { showCommandExamples() }
-        voiceCommandsDetailContainer.addView(examplesRow)
-
-        dictationContainer.addView(voiceCommandsDetailContainer)
+        dictationContainer.addView(settingsRow("Mac Cohere", "English dictation with Cohere Transcribe on your MacBook"))
 
         // ================= Settings tab =================
 
         settingsContainer.addView(sectionHeader("Settings"))
 
-        val keyRow = settingsRow("Groq API Key", "Tap to set") { promptApiKey() }
+        val keyRow = settingsRow("Mac connection key", "Tap to set") { promptApiKey() }
         keyRowSub = keyRow.findViewWithTag("subtitle")
         settingsContainer.addView(keyRow)
 
@@ -283,17 +193,15 @@ class MainActivity : AppCompatActivity() {
         }
         settingsContainer.addView(settingsRow("Version", versionName))
 
-        settingsContainer.addView(settingsRow("GitHub", "View source & releases") {
+        settingsContainer.addView(settingsRow("GitHub", "View Cohere edition source") {
             try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/EdiBianco/OpenWhispr")))
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/lishine/OpenWhispr")))
             } catch (e: Exception) {
                 toast("Couldn't open browser: ${e.message}")
             }
         })
 
-        settingsContainer.addView(settingsRow("Check for updates", "Tap to check now") {
-            checkForUpdate(force = true)
-        })
+        settingsContainer.addView(settingsRow("Cohere edition", "Updates are installed from this Mac"))
 
         outer.addView(statusContainer)
         outer.addView(dictationContainer)
@@ -323,122 +231,13 @@ class MainActivity : AppCompatActivity() {
         settingsContainer.visibility = if (index == 2) View.VISIBLE else View.GONE
     }
 
-    // --- Model Rows ---
-
-    private fun buildModelRow(model: Model): View {
-        val radio = MaterialRadioButton(this).apply {
-            isClickable = false
-            buttonTintList = ColorStateList.valueOf(attrColor(androidx.appcompat.R.attr.colorPrimary))
-        }
-        val dlBtn = MaterialButton(this, null, com.google.android.material.R.attr.materialIconButtonStyle).apply {
-            text = "↓"
-            textSize = 18f
-            setTextColor(attrColor(androidx.appcompat.R.attr.colorPrimary))
-        }
-
-        val progress = LinearProgressIndicator(this).apply {
-            visibility = View.GONE
-            layoutParams = LinearLayout.LayoutParams(LP_MATCH, dp(4)).apply {
-                topMargin = dp(8)
-            }
-        }
-
-        val rightContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(dlBtn)
-            addView(radio)
-        }
-
-        val row = settingsRow(
-            if (model.recommended) model.name else model.name,
-            "${model.quality} · ${model.sizeMb} MB",
-            rightContainer
-        ) {
-            onModelAction(model)
-        }
-
-        val textContainer = row.getChildAt(0) as LinearLayout
-        textContainer.addView(progress)
-
-        modelRows[model.archive] = ModelRowViews(
-            radio, progress, textContainer.findViewWithTag("subtitle"), dlBtn
-        )
-        refreshCard(model)
-
-        return row
-    }
-
-    private fun onModelAction(model: Model) {
-        val views = modelRows[model.archive] ?: return
-
-        if (ModelDownloader.isInstalled(this, model)) {
-            selectModel(model.archive)
-            return
-        }
-
-        views.dlBtn.isEnabled = false
-        views.progress.visibility = View.VISIBLE
-        views.progress.isIndeterminate = false
-        views.subtitle.text = "Starting download..."
-
-        ModelDownloader.download(this, model) { state ->
-            runOnUiThread {
-                when (state) {
-                    is DownloadState.Downloading -> {
-                        views.progress.progress = (state.progress * 100).toInt()
-                        views.subtitle.text = "Downloading: ${(state.progress * 100).toInt()}%"
-                    }
-                    is DownloadState.Extracting -> {
-                        views.progress.isIndeterminate = true
-                        views.subtitle.text = "Extracting..."
-                    }
-                    is DownloadState.Done -> {
-                        views.progress.visibility = View.GONE
-                        selectModel(model.archive)
-                        toast("${model.name} ready!")
-                    }
-                    is DownloadState.Error -> {
-                        views.progress.visibility = View.GONE
-                        views.subtitle.text = "Error: ${state.message}"
-                        views.dlBtn.isEnabled = true
-                    }
-                }
-            }
-        }
-    }
-
-    private fun selectModel(archive: String) {
-        prefs().edit().putString("model_name", archive).apply()
-        WhisperAccessibilityService.instance?.reloadModel()
-        refreshAllCards(); refresh()
-    }
-
-    private fun refreshCard(model: Model) {
-        val views = modelRows[model.archive] ?: return
-        val active = prefs().getString("model_name", "") == model.archive
-        val installed = ModelDownloader.isInstalled(this, model)
-
-        views.radio.isChecked = active
-        views.radio.visibility = if (installed) View.VISIBLE else View.GONE
-        views.dlBtn.visibility = if (installed) View.GONE else View.VISIBLE
-
-        if (views.progress.visibility == View.GONE) {
-            views.subtitle.text = "${model.quality} · ${model.sizeMb} MB"
-        }
-    }
-
-    private fun refreshAllCards() = MODEL_CATALOG.forEach { refreshCard(it) }
 
     // --- State Updates ---
 
     private fun refresh() {
         val audio = hasPerm(Manifest.permission.RECORD_AUDIO)
         val acc = WhisperAccessibilityService.instance != null
-        val useLocal = prefs().getBoolean("use_local", true)
-        val usePostProcessing = prefs().getBoolean("use_post_processing", false)
         val hasKey = !prefs().getString("api_key", "").isNullOrBlank()
-        val hasModel = LocalTranscriber.availableModels(this).isNotEmpty()
         val unrestricted = isIgnoringBatteryOptimizations()
 
         audioRowSub.text = if (audio) "Granted" else "Tap to grant permission"
@@ -470,40 +269,14 @@ class MainActivity : AppCompatActivity() {
         accDot.background = dotDrawable(if (acc) DOT_GREEN else DOT_RED)
         batteryDot.background = dotDrawable(if (unrestricted) DOT_GREEN else DOT_RED)
 
-        modelContainer.visibility = if (useLocal) View.VISIBLE else View.GONE
-        customInstructionsRow.visibility = if (usePostProcessing) View.VISIBLE else View.GONE
-
-        val voiceCommandsEnabled = prefs().getBoolean("voice_commands_enabled", false)
-        voiceCommandsDetailContainer.visibility = if (voiceCommandsEnabled) View.VISIBLE else View.GONE
-        triggerPhraseRowSub.text = "\"${prefs().getString("command_trigger_phrase", "Whisper Command")}\""
-
         val apiKey = prefs().getString("api_key", "") ?: ""
-        keyRowSub.text = if (apiKey.isBlank()) "Tap to set"
-                         else if (apiKey.length > 7) "gsk_...${apiKey.takeLast(4)}"
-                         else "gsk_...***"
+        keyRowSub.text = if (apiKey.isBlank()) "Tap to set" else "Configured"
 
-        val customInstructions = prefs().getString("custom_instructions", "") ?: ""
-        customInstructionsRowSub.text = if (customInstructions.isBlank())
-            "Tap to add extra refinements"
-        else
-            customInstructions.replace("\n", " ")
-
-        val cur = prefs().getString("model_name", "") ?: ""
-        if (cur.isBlank() || !File(filesDir, "models/$cur").exists()) {
-            MODEL_CATALOG.firstOrNull { ModelDownloader.isInstalled(this, it) }
-                ?.let { selectModel(it.archive) }
-        }
-
-        // Ready logic
-        val localReady = useLocal && hasModel
-        val cloudReady = !useLocal && hasKey
-        val postReady = !usePostProcessing || hasKey
-        val ready = audio && acc && (localReady || cloudReady) && postReady
+        val ready = audio && acc && hasKey
 
         statusSubtitle.text = if (ready) "Ready — tap the overlay dot to dictate" else "Setup required"
         statusSubtitle.setTextColor(if (ready) attrColor(androidx.appcompat.R.attr.colorPrimary) else attrColor(android.R.attr.textColorSecondary))
 
-        refreshAllCards()
         maybeShowBatteryWarning(acc, unrestricted)
     }
 
@@ -519,7 +292,7 @@ class MainActivity : AppCompatActivity() {
             .setMessage(
                 "Android blocks this permission by default for apps installed outside the Play Store -- that's normal, not a bug.\n\n" +
                 "If the Accessibility toggle looks greyed out or won't switch on:\n" +
-                "1. Long-press the OpenWispr icon -> App info\n" +
+                "1. Long-press the OpenWispr Cohere icon -> App info\n" +
                 "2. Tap the \u22ee menu (top right) -> \"Allow restricted settings\"\n" +
                 "3. Come back and enable Accessibility as usual"
             )
@@ -557,112 +330,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Checks this repo's GitHub Releases. No backend involved. Shows a
-     * dialog linking to the release page when a newer version is
-     * available. Runs automatically (and silently, when nothing's new)
-     * once per app-open; [force] bypasses the cache interval and always
-     * gives feedback, for the manual "Check for updates" row. */
-    private fun checkForUpdate(force: Boolean = false) {
-        val currentVersion = try {
-            packageManager.getPackageInfo(packageName, 0).versionName
-        } catch (e: Exception) {
-            null
-        } ?: return
-
-        UpdateChecker.checkForUpdate(prefs(), currentVersion, force) { info ->
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                if (info != null) {
-                    android.app.AlertDialog.Builder(this)
-                        .setTitle("Update available")
-                        .setMessage(
-                            buildString {
-                                append("OpenWispr ${info.version} is available. You're on $currentVersion.")
-                                if (!info.notes.isNullOrBlank()) {
-                                    append("\n\nWhat's new:\n")
-                                    append(info.notes)
-                                }
-                            }
-                        )
-                        .setPositiveButton("Update") { _, _ -> downloadAndInstallUpdate(info) }
-                        .setNegativeButton("Later", null)
-                        .show()
-                } else if (force) {
-                    toast("You're up to date (v$currentVersion)")
-                }
-            }
-        }
-    }
-
-    /** Downloads the release's .apk directly in-app and hands it to the
-     * system installer -- no browser tab, no external navigation. The final
-     * "install this app?" confirmation is a mandatory Android system dialog
-     * for a sideloaded APK and can't be skipped, but everything up to that
-     * point (download, progress) happens invisibly inside OpenWispr. */
-    private fun downloadAndInstallUpdate(info: UpdateChecker.UpdateInfo) {
-        val apkUrl = info.apkUrl
-        if (apkUrl == null) {
-            // Release has no .apk asset (shouldn't normally happen) -- fall
-            // back to the release page rather than doing nothing.
-            try {
-                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.url)))
-            } catch (e: Exception) {
-                toast("Couldn't open browser: ${e.message}")
-            }
-            return
-        }
-
-        if (android.os.Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
-            android.app.AlertDialog.Builder(this)
-                .setTitle("Allow installing updates")
-                .setMessage("To install updates in-app, allow OpenWispr to install unknown apps on the next screen, then come back and tap Update again.")
-                .setPositiveButton("Continue") { _, _ ->
-                    try {
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                                Uri.parse("package:$packageName")
-                            )
-                        )
-                    } catch (e: Exception) {
-                        toast("Couldn't open settings: ${e.message}")
-                    }
-                }
-                .setNegativeButton("Cancel", null)
-                .show()
-            return
-        }
-
-        toast("Downloading update…")
-        UpdateChecker.downloadApk(this, apkUrl) { file, error ->
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                if (file == null) {
-                    toast("Download failed: ${error ?: "unknown error"}")
-                    return@runOnUiThread
-                }
-                installApk(file)
-            }
-        }
-    }
-
-    private fun installApk(file: java.io.File) {
-        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "application/vnd.android.package-archive")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        try {
-            startActivity(intent)
-        } catch (e: Exception) {
-            toast("Couldn't start installer: ${e.message}")
-        }
-    }
-
-    /** Nags the user, once per app-open, if the accessibility service is on
-     * but Android is still free to kill it to save battery -- this is the
-     * single biggest cause of the overlay silently disappearing until the
-     * user re-opens the app. */
     private fun maybeShowBatteryWarning(accessibilityEnabled: Boolean, unrestricted: Boolean) {
         if (!accessibilityEnabled || unrestricted || batteryWarningShown) return
         batteryWarningShown = true
@@ -684,94 +351,22 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun promptApiKey() {
-        val link = TextView(this).apply {
-            text = android.text.Html.fromHtml(
-                "Don't have one? Get a free key at <a href=\"https://console.groq.com/keys\">console.groq.com/keys</a>",
-                android.text.Html.FROM_HTML_MODE_LEGACY
-            )
-            movementMethod = android.text.method.LinkMovementMethod.getInstance()
-            textSize = 13f
-            setPadding(0, 0, 0, dp(8))
-        }
         val input = EditText(this).apply {
-            hint = "gsk_..."
+            hint = "Mac connection key"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
             setText(prefs().getString("api_key", ""))
         }
         val container = vertical(dp(24), dp(8)).apply {
-            addView(link)
             addView(input)
         }
         android.app.AlertDialog.Builder(this)
-            .setTitle("Groq API Key")
+            .setTitle("Mac connection key")
             .setView(container)
             .setPositiveButton("Save") { _, _ ->
                 prefs().edit().putString("api_key", input.text.toString().trim()).apply()
                 refresh()
             }
             .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun promptCustomInstructions() {
-        // The base cleanup prompt itself is fixed in PostProcessor and never
-        // shown here -- this only lets the user append their own extra
-        // refinements on top of it (see PostProcessor.effectivePrompt).
-        val input = EditText(this).apply {
-            hint = "e.g. always spell out \"NASA\" in full"
-            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            minLines = 4
-            gravity = Gravity.TOP or Gravity.START
-            setText(prefs().getString("custom_instructions", ""))
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Add custom instructions")
-            .setMessage("These are appended to OpenWispr's built-in cleanup rules. They can't override its safety, formatting, or self-correction behavior.")
-            .setView(input.apply { setPadding(dp(24), dp(8), dp(24), dp(8)) })
-            .setPositiveButton("Save") { _, _ ->
-                prefs().edit().putString("custom_instructions", input.text.toString().trim()).apply()
-                refresh()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun promptTriggerPhrase() {
-        val input = EditText(this).apply {
-            hint = "Whisper Command"
-            setText(prefs().getString("command_trigger_phrase", "Whisper Command"))
-        }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Trigger phrase")
-            .setMessage("Say this phrase at the start of a recording to switch into command mode instead of normal dictation.")
-            .setView(input.apply { setPadding(dp(24), dp(8), dp(24), dp(8)) })
-            .setPositiveButton("Save") { _, _ ->
-                val phrase = input.text.toString().trim()
-                prefs().edit()
-                    .putString("command_trigger_phrase", if (phrase.isBlank()) "Whisper Command" else phrase)
-                    .apply()
-                refresh()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun showCommandExamples() {
-        val trigger = prefs().getString("command_trigger_phrase", "Whisper Command") ?: "Whisper Command"
-        val message = """
-            Say the trigger phrase, then one of these -- applies to whatever's already in the field, or to text you dictate right after the command:
-
-            • "$trigger, summarize this in two sentences"
-            • "$trigger, enhance the flow"
-            • "$trigger, translate to Italian"
-            • "$trigger, make this more formal"
-            • "$trigger, turn this into a list"
-
-            You can chain more than one: "$trigger, translate to Italian and turn it into a list" applies them in that order.
-        """.trimIndent()
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Command examples")
-            .setMessage(message)
-            .setPositiveButton("Got it", null)
             .show()
     }
 

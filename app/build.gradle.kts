@@ -7,33 +7,14 @@ android {
     namespace = "com.edib.openwhispr"
     compileSdk = 35
 
-    signingConfigs {
-        getByName("debug") {
-            // Checked-in debug key so every build (local or CI) signs with the
-            // same certificate. Without this, each machine/CI run generates
-            // its own throwaway debug key, and Android refuses to install an
-            // "update" whose signature doesn't match what's already there.
-            storeFile = file("../keystore/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
-
     defaultConfig {
-        applicationId = "com.edib.openwhispr"
+        applicationId = "com.edib.openwhispr.cohere"
         minSdk = 30
         targetSdk = 35
         versionCode = 25
-        versionName = "3.10.0"
+        versionName = "3.10.0-cohere.1"
 
         ndk { abiFilters += "arm64-v8a" }
-    }
-
-    buildTypes {
-        debug {
-            signingConfig = signingConfigs.getByName("debug")
-        }
     }
 
     compileOptions {
@@ -52,7 +33,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.14.0")
-    implementation("org.apache.commons:commons-compress:1.27.1")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

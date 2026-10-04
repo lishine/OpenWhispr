@@ -44,6 +44,7 @@ class WhisperAccessibilityService : AccessibilityService() {
         var instance: WhisperAccessibilityService? = null
         private const val TAG = "OpenWhispr"
         private const val SAMPLE_RATE = 16000
+        private const val MAX_PCM_BYTES = SAMPLE_RATE * 2 * 89
         private const val BTN_DP = 44
         private const val PAD_DP = 10
         private const val MARGIN_DP = 8
@@ -105,8 +106,6 @@ class WhisperAccessibilityService : AccessibilityService() {
         }
     }
 
-    // Local transcription engine (loaded lazily)
-    private var localTranscriber: LocalTranscriber? = null
 
     private val dp get() = resources.displayMetrics.density
     private val screenW get() = resources.displayMetrics.widthPixels
@@ -118,8 +117,6 @@ class WhisperAccessibilityService : AccessibilityService() {
         startForegroundNotification()
         updateOverlayVisibility()
         handler.post(focusPoller)
-        // Try to load local model in background
-        thread { initLocalModel() }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -187,36 +184,6 @@ class WhisperAccessibilityService : AccessibilityService() {
             Log.e(TAG, "Failed to start foreground notification", e)
         }
     }
-
-    private fun initLocalModel() {
-        // A corrupted/incompatible model file or a native (sherpa-onnx)
-        // load failure here must not be allowed to crash the process --
-        // that takes the whole accessibility service down with it.
-        try {
-            val modelName = prefs().getString("model_name", "") ?: ""
-            if (modelName.isBlank()) {
-                // Auto-detect first available model
-                val models = LocalTranscriber.availableModels(this)
-                if (models.isNotEmpty()) {
-                    Log.i(TAG, "Auto-detected model: ${models.first()}")
-                    localTranscriber = LocalTranscriber.create(this, models.first())
-                }
-            } else {
-                localTranscriber = LocalTranscriber.create(this, modelName)
-            }
-            if (localTranscriber != null) {
-                Log.i(TAG, "Local transcription ready")
-            } else {
-                Log.i(TAG, "No local model found, will use API")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Local model init failed, falling back to API", e)
-            localTranscriber = null
-        }
-    }
-
-    /** Reload local model (called from MainActivity when settings change) */
-    fun reloadModel() { thread { initLocalModel() } }
 
     // --- Overlay visibility (multi-signal, OR'd together) ---
 
@@ -577,6 +544,10 @@ class WhisperAccessibilityService : AccessibilityService() {
             while (state == State.RECORDING) {
                 val n = audioRecord?.read(buf, 0, buf.size) ?: break
                 if (n > 0) pcmStream?.write(buf, 0, n)
+                if ((pcmStream?.size() ?: 0) >= MAX_PCM_BYTES) {
+                    handler.post { if (state == State.RECORDING) stopAndTranscribe() }
+                    break
+                }
             }
         }
     }
@@ -598,47 +569,13 @@ class WhisperAccessibilityService : AccessibilityService() {
 
         if (pcm.isEmpty()) { reset("No audio captured"); return }
 
-        val useLocal = prefs().getBoolean("use_local", true)
-        val local = localTranscriber
-
-        if (useLocal && local != null) {
-            transcribeLocal(pcm, local)
-        } else {
-            transcribeApi(pcm)
-        }
-    }
-
-    private fun transcribeLocal(pcm: ByteArray, transcriber: LocalTranscriber) {
-        thread {
-            try {
-                // Convert 16-bit PCM bytes to float samples
-                val samples = FloatArray(pcm.size / 2)
-                for (i in samples.indices) {
-                    val lo = pcm[i * 2].toInt() and 0xFF
-                    val hi = pcm[i * 2 + 1].toInt()
-                    samples[i] = ((hi shl 8) or lo).toShort().toFloat() / 32768f
-                }
-
-                val t0 = System.currentTimeMillis()
-                val text = transcriber.transcribe(samples, SAMPLE_RATE)
-                val ms = System.currentTimeMillis() - t0
-                Log.i(TAG, "Local transcription: ${ms}ms, ${samples.size / SAMPLE_RATE}s audio")
-
-                handleTranscriptionResult(text)
-            } catch (e: Exception) {
-                Log.e(TAG, "Local transcription failed", e)
-                handler.post {
-                    toast("Local error: ${e.message}")
-                    goIdle()
-                }
-            }
-        }
+        transcribeApi(pcm)
     }
 
     private fun transcribeApi(pcm: ByteArray) {
         val wav = WavWriter.encode(pcm)
         val apiKey = prefs().getString("api_key", "") ?: ""
-        if (apiKey.isBlank()) { reset("Set API key in OpenWispr app"); return }
+        if (apiKey.isBlank()) { reset("Set Mac connection key in OpenWispr Cohere"); return }
 
         TranscriberClient.transcribe(wav, apiKey) { result ->
             if (result.text != null && result.text.isNotBlank()) {
@@ -661,146 +598,10 @@ class WhisperAccessibilityService : AccessibilityService() {
             return
         }
 
-        val voiceCommandsEnabled = prefs().getBoolean("voice_commands_enabled", false)
-        if (voiceCommandsEnabled) {
-            val trigger = prefs().getString("command_trigger_phrase", "Whisper Command")
-                ?: "Whisper Command"
-            val instruction = CommandProcessor.extractCommand(text, trigger)
-            if (instruction != null) {
-                handleVoiceCommand(instruction)
-                return
-            }
+        handler.post {
+            injectText(text)
+            goIdle()
         }
-
-        val usePostProcessing = prefs().getBoolean("use_post_processing", false)
-        val apiKey = prefs().getString("api_key", "") ?: ""
-
-        if (usePostProcessing) {
-            if (apiKey.isBlank()) {
-                handler.post {
-                    toast("Post-processing needs API key. Using raw text.")
-                    injectText(text)
-                    goIdle()
-                }
-                return
-            }
-
-            val customInstructions = prefs().getString("custom_instructions", "") ?: ""
-            val prompt = PostProcessor.effectivePrompt(customInstructions)
-
-            PostProcessor.process(text, prompt, apiKey) { result ->
-                handler.post {
-                    val cleaned = result.text?.trim()
-                    if (cleaned == "EMPTY") {
-                        // Model correctly identified filler-only/no-speech audio;
-                        // don't literally type the word "EMPTY" into the field.
-                        toast("No speech detected")
-                    } else if (!cleaned.isNullOrBlank()) {
-                        injectText(cleaned)
-                    } else {
-                        injectText(text, feedback = "Cleanup failed — raw copied to clipboard", feedbackDurationMs = 3000)
-                    }
-                    goIdle()
-                }
-            }
-        } else {
-            handler.post {
-                injectText(text)
-                goIdle()
-            }
-        }
-    }
-
-    /** Handles a "Whisper Command" voice command: reads whatever's in the
-     * focused field (if anything), sends it plus the spoken instruction to
-     * CommandProcessor's whitelisted-transformation prompt, and replaces the
-     * field's entire content with the result. */
-    private fun handleVoiceCommand(instruction: String) {
-        val apiKey = prefs().getString("api_key", "") ?: ""
-        if (apiKey.isBlank()) {
-            handler.post {
-                toast("Voice commands need a Groq API key")
-                goIdle()
-            }
-            return
-        }
-        if (instruction.isBlank()) {
-            handler.post {
-                toast("No command heard after the trigger phrase")
-                goIdle()
-            }
-            return
-        }
-
-        val fieldText = currentFieldText()
-
-        CommandProcessor.process(fieldText, instruction, apiKey) { result ->
-            handler.post {
-                val out = result.text?.trim()
-                when {
-                    out.isNullOrBlank() ->
-                        toast("Command failed: ${result.error ?: "empty response"}")
-                    out == CommandProcessor.UNSUPPORTED ->
-                        toast("Command not recognized -- try summarize, translate, tone, or list")
-                    else -> replaceFieldText(out)
-                }
-                goIdle()
-            }
-        }
-    }
-
-    /** Best-effort read of whatever text is already in the focused field,
-     * for voice commands that operate on existing content ("summarize
-     * this") rather than freshly dictated content. */
-    private fun currentFieldText(): String {
-        val candidates = findInjectionCandidates()
-        return try {
-            candidates.firstOrNull()?.text?.toString().orEmpty()
-        } finally {
-            candidates.forEach { it.recycle() }
-        }
-    }
-
-    /** Like injectText, but replaces the focused field's entire content
-     * instead of inserting at the cursor/selection -- used by voice
-     * commands, which transform the whole field rather than append to it. */
-    private fun replaceFieldText(text: String) {
-        val clip = ClipData.newPlainText("openwhispr", text)
-        (getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(clip)
-
-        val candidates = findInjectionCandidates()
-        var replaced = false
-        try {
-            for (candidate in candidates) {
-                if (tryReplaceEntireNode(candidate, text)) {
-                    replaced = true
-                    break
-                }
-            }
-        } finally {
-            candidates.forEach { it.recycle() }
-        }
-
-        Log.i(TAG, if (replaced) "Command replace succeeded" else "Command replace failed; clipboard fallback only")
-        showFeedback(
-            if (replaced) "Command applied" else "Couldn't replace field -- copied to clipboard",
-            if (replaced) 2000 else 3000
-        )
-    }
-
-    private fun tryReplaceEntireNode(node: AccessibilityNodeInfo, text: String): Boolean {
-        logNode("Trying full replace on node", node)
-        node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-
-        if (node.isEditable || node.className?.toString()?.contains("EditText") == true) {
-            val args = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-            }
-            val setTextOk = node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
-            Log.i(TAG, "Full-replace ACTION_SET_TEXT => $setTextOk")
-            if (setTextOk) return true
-        }
-        return false
     }
 
     private fun reset(msg: String) {
@@ -964,7 +765,7 @@ class WhisperAccessibilityService : AccessibilityService() {
         }
         Log.i(
             TAG,
-            "$prefix package=${node.packageName} class=${node.className} focused=${node.isFocused} editable=${node.isEditable} text=${node.text} desc=${node.contentDescription} actions=[$actions]"
+            "$prefix package=${node.packageName} class=${node.className} focused=${node.isFocused} editable=${node.isEditable} actions=[$actions]"
         )
     }
 

@@ -1,3 +1,11 @@
+# Cohere edition privacy
+
+This fork sends microphone WAV recordings to the authenticated Mac bridge configured in `TranscriberClient.kt` over HTTPS through Cloudflare Tunnel. Transcription runs locally on that Mac with Cohere Transcribe. It does not call Groq or perform transcript cleanup. The Mac bridge temporarily decodes the upload and removes its temporary files after processing. This app records in memory and copies the transcript to Android’s clipboard as well as attempting insertion in the focused field. Android Accessibility is used to detect text entry and insert the result. Focused-field content is not printed to app logs. A connection key is stored privately in the app; Android backup is disabled. No key is distributed in source or APK.
+
+The upstream privacy text below is retained as historical documentation of the original app, and does not describe this edition’s transcription destination.
+
+---
+
 # Privacy Policy for OpenWhispr
 
 OpenWhispr is an Android dictation app that records speech, transcribes it, and inserts the result into text fields across apps.

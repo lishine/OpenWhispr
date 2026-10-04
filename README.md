@@ -1,3 +1,9 @@
+# Cohere edition
+
+This fork uses a Mac-hosted Cohere speech model. See [Cohere setup and build instructions](COHERE.md). The upstream description below is preserved for attribution and history.
+
+---
+
 <p align="center">
   <img src="docs/logo.svg" width="128" height="128" alt="OpenWispr Logo">
 </p>
