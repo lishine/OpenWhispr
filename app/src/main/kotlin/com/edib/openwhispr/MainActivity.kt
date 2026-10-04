@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var setupCollapsedRow: LinearLayout
     private lateinit var setupCollapsedRowSub: TextView
     private lateinit var setupDoneSummary: TextView
+    private lateinit var connectionRowSub: TextView
     private lateinit var keyRowSub: TextView
     private lateinit var tabLayout: TabLayout
     private lateinit var statusContainer: LinearLayout
@@ -174,13 +175,16 @@ class MainActivity : AppCompatActivity() {
         // ================= Dictation tab =================
 
         dictationContainer.addView(sectionHeader("Engine"))
-        dictationContainer.addView(settingsRow("Mac Cohere", "English dictation with Cohere Transcribe on your MacBook"))
+        dictationContainer.addView(settingsRow("Transcription server", "Use your own OpenAI-compatible speech server; configure it in Settings"))
 
         // ================= Settings tab =================
 
         settingsContainer.addView(sectionHeader("Settings"))
 
-        val keyRow = settingsRow("Mac connection key", "Tap to set") { promptApiKey() }
+        val connectionRow = settingsRow("Server and model", "Tap to configure") { promptConnection() }
+        connectionRowSub = connectionRow.findViewWithTag("subtitle")
+        settingsContainer.addView(connectionRow)
+        val keyRow = settingsRow("API key", "Optional") { promptConnection() }
         keyRowSub = keyRow.findViewWithTag("subtitle")
         settingsContainer.addView(keyRow)
 
@@ -237,7 +241,8 @@ class MainActivity : AppCompatActivity() {
     private fun refresh() {
         val audio = hasPerm(Manifest.permission.RECORD_AUDIO)
         val acc = WhisperAccessibilityService.instance != null
-        val hasKey = !prefs().getString("api_key", "").isNullOrBlank()
+        val hasServer = !prefs().getString("transcription_url", "").isNullOrBlank() &&
+            !prefs().getString("transcription_model", "").isNullOrBlank()
         val unrestricted = isIgnoringBatteryOptimizations()
 
         audioRowSub.text = if (audio) "Granted" else "Tap to grant permission"
@@ -270,11 +275,17 @@ class MainActivity : AppCompatActivity() {
         batteryDot.background = dotDrawable(if (unrestricted) DOT_GREEN else DOT_RED)
 
         val apiKey = prefs().getString("api_key", "") ?: ""
-        keyRowSub.text = if (apiKey.isBlank()) "Tap to set" else "Configured"
+        keyRowSub.text = if (apiKey.isBlank()) "Not set (optional)" else "Configured"
+        val model = prefs().getString("transcription_model", "").orEmpty()
+        connectionRowSub.text = if (hasServer) model else "Tap to configure"
 
-        val ready = audio && acc && hasKey
+        val ready = audio && acc && hasServer
 
-        statusSubtitle.text = if (ready) "Ready — tap the overlay dot to dictate" else "Setup required"
+        statusSubtitle.text = when {
+            ready -> "Ready — tap the overlay dot to dictate"
+            !hasServer -> "Set server and model in Settings"
+            else -> "Setup required"
+        }
         statusSubtitle.setTextColor(if (ready) attrColor(androidx.appcompat.R.attr.colorPrimary) else attrColor(android.R.attr.textColorSecondary))
 
         maybeShowBatteryWarning(acc, unrestricted)
@@ -350,24 +361,57 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun promptApiKey() {
-        val input = EditText(this).apply {
-            hint = "Mac connection key"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setText(prefs().getString("api_key", ""))
+    private fun promptConnection() {
+        fun field(hintText: String, key: String, type: Int) = EditText(this).apply {
+            hint = hintText
+            isSingleLine = true
+            inputType = type
+            setText(prefs().getString(key, ""))
         }
+        val endpoint = field("Full HTTPS transcription URL", "transcription_url", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        val model = field("Model ID", "transcription_model", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        val language = field("Language code, e.g. en (blank = not sent)", "transcription_language", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS)
+        val key = field("API key (optional)", "api_key", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val container = vertical(dp(24), dp(8)).apply {
-            addView(input)
+            addView(endpoint); addView(model); addView(language); addView(key)
         }
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Mac connection key")
-            .setView(container)
-            .setPositiveButton("Save") { _, _ ->
-                prefs().edit().putString("api_key", input.text.toString().trim()).apply()
-                refresh()
-            }
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Transcription connection")
+            .setView(ScrollView(this).apply { addView(container) })
+            .setPositiveButton("Save", null)
             .setNegativeButton("Cancel", null)
-            .show()
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val url = TranscriberClient.endpoint(endpoint.text.toString().trim())
+                if (url == null) {
+                    endpoint.error = "Enter a full HTTPS URL without embedded credentials"
+                    return@setOnClickListener
+                }
+                if (model.text.isBlank()) {
+                    model.error = "Enter the server's model ID"
+                    return@setOnClickListener
+                }
+                if (key.text.any { it.code !in 32..126 }) {
+                    key.error = "Use the exact API key without non-ASCII characters"
+                    return@setOnClickListener
+                }
+                val previousHost = TranscriberClient.endpoint(prefs().getString("transcription_url", "").orEmpty())?.host
+                val previousKey = prefs().getString("api_key", "").orEmpty()
+                if (previousHost != null && previousHost != url.host && previousKey.isNotBlank() && key.text.toString().trim() == previousKey) {
+                    key.error = "Server changed: enter its key or clear this field"
+                    return@setOnClickListener
+                }
+                prefs().edit()
+                    .putString("transcription_url", url.toString())
+                    .putString("transcription_model", model.text.toString().trim())
+                    .putString("transcription_language", language.text.toString().trim())
+                    .putString("api_key", key.text.toString().trim()).apply()
+                refresh()
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
     }
 
     // --- UI Helpers ---

@@ -22,10 +22,10 @@ import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
-import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
@@ -189,6 +189,8 @@ class WhisperAccessibilityService : AccessibilityService() {
 
     private fun refreshAccessibilityFocusSignal() {
         try {
+            // The overlay's own insets can miss the IME. Read the actual interactive windows.
+            imeVisibleSignal = windows.any { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
             val root = rootInActiveWindow
             val focused = root?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
             accessibilityFocusSignal = focused != null && isEditableTextField(focused)
@@ -204,15 +206,6 @@ class WhisperAccessibilityService : AccessibilityService() {
     private fun isEditableTextField(node: AccessibilityNodeInfo): Boolean {
         val className = node.className?.toString().orEmpty()
         return node.isEditable || className.contains("EditText")
-    }
-
-    /** Fed by the overlay view's WindowInsets listener -- catches apps whose
-     * custom composers (WhatsApp, Telegram, ...) never fire accessibility
-     * focus events at all, since this signal comes from the window manager
-     * rather than the foreground app's own accessibility tree. */
-    private fun onKeyboardVisibilityChanged(visible: Boolean) {
-        imeVisibleSignal = visible
-        updateOverlayVisibility()
     }
 
     private fun updateOverlayVisibility() {
@@ -312,14 +305,7 @@ class WhisperAccessibilityService : AccessibilityService() {
             addView(img, FrameLayout.LayoutParams(buttonSize, buttonSize, Gravity.CENTER))
             alpha = 0f
             visibility = View.INVISIBLE
-            setOnApplyWindowInsetsListener { _, insets ->
-                try {
-                    onKeyboardVisibilityChanged(insets.isVisible(WindowInsets.Type.ime()))
-                } catch (e: Exception) {
-                    Log.e(TAG, "IME insets check failed", e)
-                }
-                insets
-            }
+
         }
 
         val params = WindowManager.LayoutParams(
@@ -514,6 +500,10 @@ class WhisperAccessibilityService : AccessibilityService() {
     }
 
     private fun startRecording() {
+        if (TranscriberClient.endpoint(prefs().getString("transcription_url", "").orEmpty()) == null ||
+            prefs().getString("transcription_model", "").isNullOrBlank()) {
+            toast("Set server URL and model in Settings"); return
+        }
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
             != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             toast("Grant audio permission in OpenWispr app"); return
@@ -575,9 +565,12 @@ class WhisperAccessibilityService : AccessibilityService() {
     private fun transcribeApi(pcm: ByteArray) {
         val wav = WavWriter.encode(pcm)
         val apiKey = prefs().getString("api_key", "") ?: ""
-        if (apiKey.isBlank()) { reset("Set Mac connection key in OpenWispr Cohere"); return }
+        val endpoint = prefs().getString("transcription_url", "").orEmpty()
+        val model = prefs().getString("transcription_model", "").orEmpty()
+        val language = prefs().getString("transcription_language", "").orEmpty()
+        if (endpoint.isBlank() || model.isBlank()) { reset("Set server URL and model in Settings"); return }
 
-        TranscriberClient.transcribe(wav, apiKey) { result ->
+        TranscriberClient.transcribe(wav, endpoint, model, language, apiKey) { result ->
             if (result.text != null && result.text.isNotBlank()) {
                 handleTranscriptionResult(result.text)
             } else {
@@ -650,14 +643,16 @@ class WhisperAccessibilityService : AccessibilityService() {
     private fun findInjectionCandidates(): List<AccessibilityNodeInfo> {
         val candidates = mutableListOf<AccessibilityNodeInfo>()
 
+        var activeWindowId: Int? = null
         rootInActiveWindow?.let { root ->
+            activeWindowId = root.windowId
             Log.i(TAG, "Active root: package=${root.packageName} class=${root.className}")
             collectInjectionCandidates(root, candidates)
             root.recycle()
         }
 
         windows
-            ?.filter { it.isActive || it.isFocused }
+            ?.filter { (it.isActive || it.isFocused) && it.id != activeWindowId }
             ?.forEach { window ->
                 val root = window.root ?: return@forEach
                 Log.i(

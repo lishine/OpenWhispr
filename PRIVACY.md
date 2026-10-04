@@ -1,8 +1,10 @@
-# Cohere edition privacy
+# Configurable speech server edition privacy
 
-This fork sends microphone WAV recordings to the authenticated Mac bridge configured in `TranscriberClient.kt` over HTTPS through Cloudflare Tunnel. Transcription runs locally on that Mac with Cohere Transcribe. It does not call Groq or perform transcript cleanup. The Mac bridge temporarily decodes the upload and removes its temporary files after processing. This app records in memory and copies the transcript to Android’s clipboard as well as attempting insertion in the focused field. Android Accessibility is used to detect text entry and insert the result. Focused-field content is not printed to app logs. A connection key is stored privately in the app; Android backup is disabled. No key is distributed in source or APK.
+Microphone WAV recordings are sent over HTTPS to the transcription URL you select in Settings. There is no default public endpoint. Your chosen provider or self-hosted server controls processing and retention. With a personal Mac Cohere bridge, transcription runs on that Mac; an HTTPS tunnel provider also carries the audio. The original Mac bridge deletes temporary files after processing, but this app cannot impose that policy on other servers.
 
-The upstream privacy text below is retained as historical documentation of the original app, and does not describe this edition’s transcription destination.
+The app records in memory. It copies the transcript to Android's clipboard and attempts insertion into the active field. Android Accessibility detects editable focus and the visible input-method window, and inserts the result. Focused-field content and API keys are not printed to app logs. Connection settings are stored privately on-device and Android backup is disabled. No key is included in source or APK. There is no cleanup/chat-model call or on-phone speech engine.
+
+The upstream policy below is historical and does not describe this edition's configurable destination.
 
 ---
 
