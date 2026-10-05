@@ -16,6 +16,9 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
+import android.text.Spanned
+import android.text.style.CharacterStyle
+import android.text.style.ParagraphStyle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -713,9 +716,13 @@ class WhisperAccessibilityService : AccessibilityService() {
             !(node.isEditable || node.className?.toString()?.contains("EditText") == true)) return false
 
         logNode("Trying direct insertion", node)
+        val exposed = node.text
+        // SET_TEXT reconstructs plain text; preserve formatting through native paste instead.
+        if (exposed is Spanned && exposed.getSpans(0, exposed.length, Any::class.java)
+                .any { it is CharacterStyle || it is ParagraphStyle }) return false
         val insertion = insertAtSelection(
-            node.text?.toString().orEmpty(), node.textSelectionStart, node.textSelectionEnd, text
-        )
+            exposed?.toString(), node.isShowingHintText, node.textSelectionStart, node.textSelectionEnd, text, node.maxTextLength
+        ) ?: return false
         val args = Bundle().apply {
             putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, insertion.text)
         }
