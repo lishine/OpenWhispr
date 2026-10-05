@@ -17,6 +17,7 @@ class DictationCheckActivity : Activity() {
         val clipboardCheck = intent.getBooleanExtra("clipboard_check", false)
         val sentinel = "dictation-check-sentinel"
         val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+        if (intent.getBooleanExtra("clipboard_clear", false)) clipboard.clearPrimaryClip()
         if (clipboardCheck) clipboard.setPrimaryClip(ClipData.newPlainText("dictation-check", sentinel))
         val field = EditText(this).apply {
             hint = "Tap here, then tap the mic to dictate"
